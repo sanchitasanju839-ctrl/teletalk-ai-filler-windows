@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teletalk Backend Launcher</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 40px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      width: 100%;
+      max-width: 380px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .logo {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      color: #333;
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      color: #666;
+      font-size: 13px;
+    }
+
+    .status-box {
+      background: #f8f9fa;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 25px;
+      text-align: center;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: pulse 2s infinite;
+    }
+
+    .status-indicator.running {
+      background-color: #27ae60;
+    }
+
+    .status-indicator.stopped {
+      background-color: #e74c3c;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .status-text {
+      color: #333;
+      font-size: 16px;
+      font-weight: 600;
+      margin-top: 10px;
+    }
+
+    .status-message {
+      color: #666;
+      font-size: 12px;
+      margin-top: 5px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    button {
+      flex: 1;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-start {
+      background: #27ae60;
+      color: white;
+    }
+
+    .btn-start:hover:not(:disabled) {
+      background: #229954;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(39, 174, 96, 0.3);
+    }
+
+    .btn-stop {
+      background: #e74c3c;
+      color: white;
+    }
+
+    .btn-stop:hover:not(:disabled) {
+      background: #c0392b;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .info-box {
+      background: #ecf0f1;
+      border-left: 4px solid #3498db;
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #333;
+      line-height: 1.5;
+    }
+
+    .info-box strong {
+      display: block;
+      margin-bottom: 5px;
+      color: #2c3e50;
+    }
+
+    .port-info {
+      background: #f0f3f4;
+      padding: 12px;
+      border-radius: 6px;
+      margin-top: 15px;
+      font-size: 12px;
+      color: #555;
+    }
+
+    .port-info code {
+      background: #ecf0f1;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      color: #2c3e50;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">⚙️</div>
+      <h1>Teletalk Backend</h1>
+      <p class="subtitle">Smart Fill AI Service</p>
+    </div>
+
+    <div class="status-box">
+      <div>
+        <span class="status-indicator stopped" id="indicator"></span>
+        <span class="status-text" id="status-title">Offline</span>
+      </div>
+      <div class="status-message" id="status-message">Initializing...</div>
+    </div>
+
+    <div class="buttons">
+      <button class="btn-start" id="btn-start">Start Service</button>
+      <button class="btn-stop" id="btn-stop" disabled>Stop Service</button>
+    </div>
+
+    <div class="info-box">
+      <strong>ℹ️ How it works:</strong>
+      1. Click "Start Service" to begin<br>
+      2. Keep this window open while using Teletalk<br>
+      3. Visit teletalk.com.bd and use the form filler<br>
+      4. Click "Stop Service" when done
+    </div>
+
+    <div class="port-info">
+      <strong>Backend running on:</strong> <code>http://127.0.0.1:3000</code>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

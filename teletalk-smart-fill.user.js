@@ -30,7 +30,6 @@
 
   const PRIMARY_BACKEND_URL = 'http://127.0.0.1:3000';
   const FALLBACK_BACKEND_URL = 'http://localhost:3000';
-  const CONTROLLER_URL = 'http://127.0.0.1:3001';
 
   function removeLegacyUIs() {
     const ids = [
@@ -247,7 +246,7 @@
     return { applied, missed };
   }
 
-  function requestBackendOnce(baseUrl, formStructure) {
+  function callBackend(baseUrl, formStructure) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: 'POST',
@@ -272,48 +271,24 @@
     });
   }
 
-  async function callBackend(formStructure, status) {
+  async function connectBackend(formStructure, status) {
     let lastError = null;
-    const quickPlan = [PRIMARY_BACKEND_URL, FALLBACK_BACKEND_URL, PRIMARY_BACKEND_URL];
+    const attempts = [PRIMARY_BACKEND_URL, FALLBACK_BACKEND_URL, PRIMARY_BACKEND_URL];
 
-    for (let i = 0; i < quickPlan.length; i++) {
-      const baseUrl = quickPlan[i];
+    for (let i = 0; i < attempts.length; i++) {
+      const baseUrl = attempts[i];
       try {
-        if (status) status.textContent = i === 0 ? 'Connecting backend...' : 'Retrying backend...';
-        return await requestBackendOnce(baseUrl, formStructure);
+        if (status) status.textContent = i === 0 ? 'Connecting to backend...' : 'Retrying...';
+        return await callBackend(baseUrl, formStructure);
       } catch (error) {
         lastError = error;
-        if (i < quickPlan.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
+        if (i < attempts.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 800));
         }
       }
     }
 
     throw lastError || new Error('Backend is unreachable');
-  }
-
-  function callController(path, method = 'GET') {
-    return new Promise((resolve, reject) => {
-      GM_xmlhttpRequest({
-        method,
-        url: `${CONTROLLER_URL}${path}`,
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 20000,
-        onload: (res) => {
-          if (res.status >= 200 && res.status < 300) {
-            try {
-              resolve(JSON.parse(res.responseText));
-            } catch (_) {
-              reject(new Error('Invalid controller JSON'));
-            }
-          } else {
-            reject(new Error(`Controller HTTP ${res.status}`));
-          }
-        },
-        onerror: () => reject(new Error('Controller unreachable')),
-        ontimeout: () => reject(new Error('Controller timeout'))
-      });
-    });
   }
 
   function buildUI() {
@@ -342,11 +317,6 @@
         <button id="teletalk-v4-fill" type="button" style="background:#2ecc71;color:#000;border:0;border-radius:8px;padding:8px 10px;font-weight:700;cursor:pointer;">Smart Fill</button>
         <button id="teletalk-v4-force" type="button" style="background:#f39c12;color:#000;border:0;border-radius:8px;padding:8px 10px;font-weight:700;cursor:pointer;">Force Fill</button>
         <button id="teletalk-v4-clear" type="button" style="background:#e74c3c;color:#fff;border:0;border-radius:8px;padding:8px 10px;font-weight:700;cursor:pointer;">Clear Cache</button>
-        <button id="teletalk-v4-start" type="button" style="background:#3498db;color:#fff;border:0;border-radius:8px;padding:6px 8px;font-weight:700;cursor:pointer;">Start</button>
-        <button id="teletalk-v4-stop" type="button" style="background:#7f8c8d;color:#fff;border:0;border-radius:8px;padding:6px 8px;font-weight:700;cursor:pointer;">Stop</button>
-        <button id="teletalk-v4-restart" type="button" style="background:#9b59b6;color:#fff;border:0;border-radius:8px;padding:6px 8px;font-weight:700;cursor:pointer;">Restart</button>
-        <button id="teletalk-v4-fix" type="button" style="background:#16a085;color:#fff;border:0;border-radius:8px;padding:6px 8px;font-weight:700;cursor:pointer;">Fix Port</button>
-        <span id="teletalk-v4-svc" style="display:inline-block;padding:2px 6px;border-radius:6px;background:#333;">Svc: ...</span>
         <span id="teletalk-v4-status" style="max-width:240px;display:inline-block;">Ready</span>
       </div>
     `;
@@ -356,47 +326,7 @@
     const btnFill = document.getElementById('teletalk-v4-fill');
     const btnForce = document.getElementById('teletalk-v4-force');
     const btnClear = document.getElementById('teletalk-v4-clear');
-    const btnStart = document.getElementById('teletalk-v4-start');
-    const btnStop = document.getElementById('teletalk-v4-stop');
-    const btnRestart = document.getElementById('teletalk-v4-restart');
-    const btnFix = document.getElementById('teletalk-v4-fix');
-    const svc = document.getElementById('teletalk-v4-svc');
     const status = document.getElementById('teletalk-v4-status');
-
-    function setSvcBadge(text, color) {
-      svc.textContent = text;
-      svc.style.background = color;
-    }
-
-    async function refreshServiceStatus() {
-      try {
-        const s = await callController('/status');
-        if (s.active === 'active') setSvcBadge('Svc: Online', '#145a32');
-        else setSvcBadge(`Svc: ${s.active}`, '#7f8c8d');
-      } catch (_) {
-        setSvcBadge('Svc: Ctrl Off', '#922b21');
-      }
-    }
-
-    async function doServiceAction(actionPath, label) {
-      btnStart.disabled = true;
-      btnStop.disabled = true;
-      btnRestart.disabled = true;
-      btnFix.disabled = true;
-      status.textContent = `${label}...`;
-      try {
-        await callController(actionPath, 'POST');
-        await refreshServiceStatus();
-        status.textContent = `${label} done`;
-      } catch (e) {
-        status.textContent = `${label} failed`;
-      } finally {
-        btnStart.disabled = false;
-        btnStop.disabled = false;
-        btnRestart.disabled = false;
-        btnFix.disabled = false;
-      }
-    }
 
     async function runFill(forceRefresh) {
       btnFill.disabled = true;
@@ -424,31 +354,14 @@
 
         status.textContent = forceRefresh ? 'Force refresh from backend...' : 'Fetching mapping...';
 
-        // Fast path: proactively start backend if service is inactive.
-        try {
-          const state = await callController('/status');
-          if (state?.active !== 'active') {
-            status.textContent = 'Starting backend...';
-            await callController('/start', 'POST');
-            await refreshServiceStatus();
-          }
-        } catch (_) {
-          // Controller might be unavailable; continue with direct backend attempt.
-        }
-
+        // Connect to backend and get mapping
         let payload;
         try {
-          payload = await callBackend(formStructure, status);
-        } catch (firstError) {
-          status.textContent = 'Trying auto-fix port...';
-          try {
-            await callController('/fix-port', 'POST');
-            await refreshServiceStatus();
-            payload = await callBackend(formStructure, status);
-          } catch (_) {
-            throw firstError;
-          }
+          payload = await connectBackend(formStructure, status);
+        } catch (error) {
+          throw error;
         }
+
         const mapping = payload?.mapping || {};
         const { applied, missed } = applyMapping(mapping);
 
@@ -467,9 +380,16 @@
         });
       } catch (err) {
         const msg = err?.message || String(err);
-        status.textContent = `Error: ${msg}`;
+        let displayMsg = msg;
+        
+        // Provide helpful error messages
+        if (msg.includes('Cannot reach backend') || msg.includes('3000')) {
+          displayMsg = 'Backend not running. Please run START_BACKEND.bat to start the backend, then try again.';
+        }
+        
+        status.textContent = `Error: ${displayMsg}`;
         console.error('[Teletalk Smart Fill] error', err);
-        alert(msg);
+        alert(displayMsg);
       } finally {
         btnFill.disabled = false;
         btnForce.disabled = false;
@@ -479,10 +399,6 @@
 
     btnFill.addEventListener('click', () => runFill(false));
     btnForce.addEventListener('click', () => runFill(true));
-    btnStart.addEventListener('click', () => doServiceAction('/start', 'Start'));
-    btnStop.addEventListener('click', () => doServiceAction('/stop', 'Stop'));
-    btnRestart.addEventListener('click', () => doServiceAction('/restart', 'Restart'));
-    btnFix.addEventListener('click', () => doServiceAction('/fix-port', 'Fix Port'));
 
     btnClear.addEventListener('click', () => {
       try {
@@ -495,9 +411,6 @@
         status.textContent = 'Could not clear cache';
       }
     });
-
-    refreshServiceStatus();
-    setInterval(refreshServiceStatus, 6000);
   }
 
   setTimeout(buildUI, 800);

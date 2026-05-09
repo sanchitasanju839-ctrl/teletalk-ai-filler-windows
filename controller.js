@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { exec, spawn } = require('child_process');
 const http = require('http');
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -67,14 +68,41 @@ async function serviceState() {
 }
 
 app.get('/status', async (_req, res) => {
-  res.json({ ok: true, ...(await serviceState()) });
+  const state = await serviceState();
+  console.log(`[${new Date().toLocaleTimeString()}] Status request: ${state.active}`);
+  res.json({ ok: true, ...state });
 });
 
 app.post('/start', async (_req, res) => {
-  if (await pingBackend()) return res.json({ ok: true, action: 'start' });
-  spawn('npm.cmd', ['start'], { cwd: __dirname, detached: true, stdio: 'ignore' }).unref();
-  const up = await waitBackendUp();
-  res.json({ ok: up, action: 'start', state: await serviceState() });
+  console.log(`[${new Date().toLocaleTimeString()}] Start request received`);
+  
+  if (await pingBackend()) {
+    console.log(`[${new Date().toLocaleTimeString()}] Backend already running`);
+    return res.json({ ok: true, action: 'start', state: await serviceState() });
+  }
+  
+  try {
+    console.log(`[${new Date().toLocaleTimeString()}] Starting backend via npm...`);
+    // Try npm start first
+    spawn('npm.cmd', ['start'], { cwd: __dirname, detached: true, stdio: 'ignore' }).unref();
+    const up = await waitBackendUp();
+    
+    if (!up) {
+      console.log(`[${new Date().toLocaleTimeString()}] npm start failed, trying npx ts-node...`);
+      // Fallback: try direct node command
+      const scriptPath = path.join(__dirname, 'src', 'index.ts');
+      spawn('npx', ['ts-node', scriptPath], { cwd: __dirname, detached: true, stdio: 'ignore' }).unref();
+      const upRetry = await waitBackendUp();
+      console.log(`[${new Date().toLocaleTimeString()}] Backend ${upRetry ? 'started' : 'failed to start'} via npx`);
+      return res.json({ ok: upRetry, action: 'start', state: await serviceState() });
+    }
+    
+    console.log(`[${new Date().toLocaleTimeString()}] Backend started successfully`);
+    res.json({ ok: up, action: 'start', state: await serviceState() });
+  } catch (err) {
+    console.error(`[${new Date().toLocaleTimeString()}] Start error:`, err);
+    res.json({ ok: false, action: 'start', error: err.message, state: await serviceState() });
+  }
 });
 
 app.post('/stop', async (_req, res) => {
@@ -83,10 +111,16 @@ app.post('/stop', async (_req, res) => {
 });
 
 app.post('/restart', async (_req, res) => {
-  await stopBackend();
-  spawn('npm.cmd', ['start'], { cwd: __dirname, detached: true, stdio: 'ignore' }).unref();
-  const up = await waitBackendUp();
-  res.json({ ok: up, action: 'restart', state: await serviceState() });
+  try {
+    await stopBackend();
+    await new Promise((r) => setTimeout(r, 1000)); // Wait a second before restarting
+    spawn('npm.cmd', ['start'], { cwd: __dirname, detached: true, stdio: 'ignore' }).unref();
+    const up = await waitBackendUp();
+    res.json({ ok: up, action: 'restart', state: await serviceState() });
+  } catch (err) {
+    console.error('Restart error:', err);
+    res.json({ ok: false, action: 'restart', error: err.message, state: await serviceState() });
+  }
 });
 
 app.post('/fix-port', async (_req, res) => {

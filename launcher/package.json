@@ -1,0 +1,29 @@
+{
+  "name": "teletalk-launcher",
+  "version": "1.0.0",
+  "description": "Teletalk Backend Launcher",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.1.0"
+  },
+  "devDependencies": {
+    "electron": "^latest",
+    "electron-builder": "^latest"
+  },
+  "build": {
+    "appId": "com.teletalk.launcher",
+    "productName": "Teletalk Backend Launcher",
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
