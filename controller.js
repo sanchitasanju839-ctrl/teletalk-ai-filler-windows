@@ -1,14 +1,16 @@
 const express = require('express');
 const cors = require('cors');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const MAIN_SERVICE = 'teletalk-ai-filler.service';
 const PORT = 3001;
+let backendProcess = null;
 
 function run(cmd) {
   return new Promise((resolve) => {
@@ -41,31 +43,31 @@ function pingBackend() {
   });
 }
 
-async function waitBackendUp(maxMs = 12000) {
+async function waitBackendUp(maxMs = 15000) {
   const started = Date.now();
   while (Date.now() - started < maxMs) {
     const ok = await pingBackend();
     if (ok) return true;
-    await sleep(500);
+    await sleep(1000);
   }
   return false;
 }
 
 async function serviceState() {
-  const enabled = await run(`systemctl --user is-enabled ${MAIN_SERVICE}`);
-  const active = await run(`systemctl --user is-active ${MAIN_SERVICE}`);
-  const listen = await run("ss -ltnp '( sport = :3000 )' | tail -n +2");
+  // Check if port 3000 is listening on Windows
+  const listen = await run('netstat -ano | findstr :3000 | findstr LISTENING');
+  const active = await pingBackend();
 
   return {
-    service: MAIN_SERVICE,
-    enabled: enabled.ok ? enabled.stdout : enabled.stderr || 'unknown',
-    active: active.ok ? active.stdout : active.stderr || 'inactive',
+    service: 'teletalk-ai-filler',
+    enabled: 'n/a (windows)',
+    active: active ? 'active' : 'inactive',
     port3000: listen.stdout || ''
   };
 }
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: MAIN_SERVICE });
+  res.json({ ok: true });
 });
 
 app.get('/status', async (_req, res) => {
@@ -74,51 +76,71 @@ app.get('/status', async (_req, res) => {
 });
 
 app.post('/start', async (_req, res) => {
-  const out = await run(`systemctl --user start ${MAIN_SERVICE}`);
+  if (await pingBackend()) {
+     return res.json({ ok: true, action: 'start', message: 'Already running' });
+  }
+
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  backendProcess = spawn(npmCmd, ['start'], {
+    cwd: __dirname,
+    detached: true,
+    stdio: 'ignore'
+  });
+  backendProcess.unref();
+
   const backendUp = await waitBackendUp();
   const state = await serviceState();
-  res.json({ ok: out.ok && backendUp, action: 'start', out, backendUp, state });
+  res.json({ ok: backendUp, action: 'start', backendUp, state });
 });
 
 app.post('/stop', async (_req, res) => {
-  const out = await run(`systemctl --user stop ${MAIN_SERVICE}`);
+  // Kill process on port 3000
+  const findPort = await run('netstat -ano | findstr :3000 | findstr LISTENING');
+  if (findPort.stdout) {
+    const lines = findPort.stdout.split('\n');
+    for (const line of lines) {
+      const parts = line.trim().split(/\s+/);
+      const pid = parts[parts.length - 1];
+      if (pid && /^\d+$/.test(pid)) {
+        await run(	askkill /F /PID  + pid);
+      }
+    }
+  }
   const state = await serviceState();
-  res.json({ ok: out.ok, action: 'stop', out, state });
+  res.json({ ok: true, action: 'stop', state });
 });
 
 app.post('/restart', async (_req, res) => {
-  const out = await run(`systemctl --user restart ${MAIN_SERVICE}`);
+  await run('netstat -ano | findstr :3000').then(async (out) => {
+      if (out.stdout) {
+          const pid = out.stdout.trim().split(/\s+/).pop();
+          if (pid) await run(	askkill /F /PID  + pid);
+      }
+  });
+  
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  spawn(npmCmd, ['start'], { cwd: __dirname, detached: true, stdio: 'ignore' }).unref();
+  
   const backendUp = await waitBackendUp();
   const state = await serviceState();
-  res.json({ ok: out.ok && backendUp, action: 'restart', out, backendUp, state });
+  res.json({ ok: backendUp, action: 'restart', backendUp, state });
 });
 
 app.post('/fix-port', async (_req, res) => {
-  const pids = await run('lsof -ti :3000');
-  let killOut = { ok: true, stdout: 'no process', stderr: '' };
-
-  if (pids.stdout) {
-    const list = pids.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
-    if (list.length) {
-      killOut = await run(`kill -9 ${list.join(' ')}`);
-    }
+  const findPort = await run('netstat -ano | findstr :3000');
+  if (findPort.stdout) {
+    const pid = findPort.stdout.trim().split(/\s+/).pop();
+    if (pid) await run(	askkill /F /PID  + pid);
   }
-
-  const restartOut = await run(`systemctl --user restart ${MAIN_SERVICE}`);
+  
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  spawn(npmCmd, ['start'], { cwd: __dirname, detached: true, stdio: 'ignore' }).unref();
+  
   const backendUp = await waitBackendUp();
   const state = await serviceState();
-
-  res.json({
-    ok: restartOut.ok && backendUp,
-    action: 'fix-port',
-    killed: pids.stdout || '',
-    killOut,
-    restartOut,
-    backendUp,
-    state
-  });
+  res.json({ ok: backendUp, action: 'fix-port', backendUp, state });
 });
 
 app.listen(PORT, '127.0.0.1', () => {
-  console.log(`Teletalk controller running on http://127.0.0.1:${PORT}`);
+  console.log('Teletalk controller running on http://127.0.0.1:' + PORT);
 });
