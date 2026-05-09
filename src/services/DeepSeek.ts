@@ -661,7 +661,8 @@ export class DeepSeekAPI {
     sessionId: string,
     prompt: string,
     searchEnabled: boolean = config.ENABLE_WEB_SEARCH,
-    refFileIds: string[] = []
+    refFileIds: string[] = [],
+    thinkingEnabled: boolean = true
   ): AsyncGenerator<DeepSeekStreamChunk> {
     const res = await this.withSerializedChatStart(async () => {
       const powResponse = await this.buildPowResponse('/api/v0/chat/completion');
@@ -670,7 +671,7 @@ export class DeepSeekAPI {
         chat_session_id: sessionId,
         prompt,
         ref_file_ids: refFileIds,
-        thinking_enabled: true,
+        thinking_enabled: thinkingEnabled,
         search_enabled: searchEnabled
       }, {
         headers: { 'x-ds-pow-response': powResponse },

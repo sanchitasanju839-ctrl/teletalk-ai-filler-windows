@@ -33,7 +33,8 @@ app.get('/api/web/user-data', async (_req, res) => {
 
 app.post('/api/smart-fill', async (req, res) => {
   const fieldCount = req.body?.formStructure?.length || 0;
-  console.log('smart-fill request fields=' + fieldCount);
+  const deepseekMode = req.body?.deepseekMode || 'expert';
+  console.log(`smart-fill request fields=${fieldCount} mode=${deepseekMode}`);
 
   try {
     let { formStructure, userData } = req.body;
@@ -46,7 +47,7 @@ app.post('/api/smart-fill', async (req, res) => {
       userData = readExportJson();
     }
 
-    const result = await SmartFillService.getMapping(formStructure, userData);
+    const result = await SmartFillService.getMapping(formStructure, userData, deepseekMode);
     console.log('mapping done total=' + result.meta.totalCount);
 
     res.status(200).json(result);

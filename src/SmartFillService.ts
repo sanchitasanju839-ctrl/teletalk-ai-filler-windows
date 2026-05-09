@@ -13,7 +13,7 @@ type MappingResult = {
 };
 
 export class SmartFillService {
-  static async getMapping(formStructure: AnyObj[], userData: AnyObj): Promise<MappingResult> {
+  static async getMapping(formStructure: AnyObj[], userData: AnyObj, deepseekMode: string = 'expert'): Promise<MappingResult> {
     const direct = this.buildDirectMapping(formStructure, userData);
 
     const unmatched = formStructure.filter((f) => {
@@ -26,7 +26,7 @@ export class SmartFillService {
 
     if (unmatched.length > 0) {
       try {
-        aiMapping = await this.getAiMapping(unmatched, userData);
+        aiMapping = await this.getAiMapping(unmatched, userData, deepseekMode);
       } catch (error: any) {
         aiError = error?.message || 'AI mapping failed';
         console.warn(`[SmartFillService] AI fallback skipped: ${aiError}`);
@@ -115,14 +115,16 @@ export class SmartFillService {
     return mapping;
   }
 
-  private static async getAiMapping(formStructure: AnyObj[], userData: AnyObj): Promise<Record<string, any>> {
+  private static async getAiMapping(formStructure: AnyObj[], userData: AnyObj, deepseekMode: string = 'expert'): Promise<Record<string, any>> {
     const api = new DeepSeekAPI();
     await api.init();
+
+    const thinkingEnabled = deepseekMode === 'expert';
 
     let lastError: any = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        console.log(`[SmartFillService] AI attempt ${attempt}/3...`);
+        console.log(`[SmartFillService] AI attempt ${attempt}/3 (mode=${deepseekMode})...`);
         const sessionId = await api.createSession();
 
         const prompt = `
@@ -137,7 +139,7 @@ ${JSON.stringify(userData, null, 2)}
 `;
 
         let responseText = '';
-        const iterator = api.chatCompletion(sessionId, prompt, false);
+        const iterator = api.chatCompletion(sessionId, prompt, false, [], thinkingEnabled);
         for await (const chunk of iterator) {
           if (chunk.content) responseText += chunk.content;
         }

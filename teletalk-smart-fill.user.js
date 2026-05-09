@@ -100,12 +100,15 @@
       const label = getLabelFor(el);
 
       const signature = `${name} ${id} ${label}`.toLowerCase();
+      const isPostcode = signature.includes('postcode') || signature.includes('post code');
       if (
-        signature.includes('captcha') ||
-        signature.includes('verification') ||
-        signature.includes('validation') ||
-        signature.includes('security code') ||
-        signature.includes('code')
+        !isPostcode && (
+          signature.includes('captcha') ||
+          signature.includes('verification') ||
+          signature.includes('validation') ||
+          signature.includes('security code') ||
+          /\bcode\b/.test(signature)
+        )
       ) {
         return;
       }
@@ -200,6 +203,11 @@
     } else if (type === 'checkbox') {
       const str = String(value).toLowerCase();
       const shouldCheck = ['1', 'true', 'yes', 'on'].includes(str);
+      // Special case for Masters applicable checkbox to trigger site logic
+      if ((el.name === 'if_applicable_mas' || el.id === 'if_applicable_mas') && el.checked !== shouldCheck) {
+        el.click();
+        return true;
+      }
       el.checked = shouldCheck;
     } else {
       el.value = value;
@@ -246,13 +254,13 @@
     return { applied, missed };
   }
 
-  function callBackend(baseUrl, formStructure) {
+  function callBackend(baseUrl, formStructure, deepseekMode) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: 'POST',
         url: `${baseUrl}/api/smart-fill`,
         headers: { 'Content-Type': 'application/json' },
-        data: JSON.stringify({ formStructure, userData: { fields: [] } }),
+        data: JSON.stringify({ formStructure, userData: { fields: [] }, deepseekMode }),
         timeout: 120000,
         onload: (res) => {
           if (res.status >= 200 && res.status < 300) {
@@ -271,7 +279,7 @@
     });
   }
 
-  async function connectBackend(formStructure, status) {
+  async function connectBackend(formStructure, status, deepseekMode) {
     let lastError = null;
     const attempts = [PRIMARY_BACKEND_URL, FALLBACK_BACKEND_URL, PRIMARY_BACKEND_URL];
 
@@ -279,7 +287,7 @@
       const baseUrl = attempts[i];
       try {
         if (status) status.textContent = i === 0 ? 'Connecting to backend...' : 'Retrying...';
-        return await callBackend(baseUrl, formStructure);
+        return await callBackend(baseUrl, formStructure, deepseekMode);
       } catch (error) {
         lastError = error;
         if (i < attempts.length - 1) {
@@ -309,15 +317,24 @@
       'border-radius:10px',
       'font:12px/1.3 Arial, sans-serif',
       'box-shadow:0 8px 20px rgba(0,0,0,.35)',
-      'min-width:260px'
+      'min-width:280px'
     ].join(';');
 
     panel.innerHTML = `
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <button id="teletalk-v4-fill" type="button" style="background:#2ecc71;color:#000;border:0;border-radius:8px;padding:8px 10px;font-weight:700;cursor:pointer;">Smart Fill</button>
-        <button id="teletalk-v4-force" type="button" style="background:#f39c12;color:#000;border:0;border-radius:8px;padding:8px 10px;font-weight:700;cursor:pointer;">Force Fill</button>
-        <button id="teletalk-v4-clear" type="button" style="background:#e74c3c;color:#fff;border:0;border-radius:8px;padding:8px 10px;font-weight:700;cursor:pointer;">Clear Cache</button>
-        <span id="teletalk-v4-status" style="max-width:240px;display:inline-block;">Ready</span>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button id="teletalk-v4-fill" type="button" style="background:#2ecc71;color:#000;border:0;border-radius:8px;padding:8px 10px;font-weight:700;cursor:pointer;">Smart Fill</button>
+          <button id="teletalk-v4-force" type="button" style="background:#f39c12;color:#000;border:0;border-radius:8px;padding:8px 10px;font-weight:700;cursor:pointer;">Force Fill</button>
+          <button id="teletalk-v4-clear" type="button" style="background:#e74c3c;color:#fff;border:0;border-radius:8px;padding:8px 10px;font-weight:700;cursor:pointer;">Clear Cache</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="font-weight:700;color:#2ecc71;">Mode:</span>
+          <select id="teletalk-v4-mode" style="background:#222;color:#fff;border:1px solid #444;border-radius:4px;padding:4px 6px;cursor:pointer;">
+            <option value="instant" selected>DeepSeek Instant (V3)</option>
+            <option value="expert">DeepSeek Expert (R1)</option>
+          </select>
+        </div>
+        <span id="teletalk-v4-status" style="max-width:260px;display:inline-block;color:#aaa;">Ready</span>
       </div>
     `;
 
@@ -326,12 +343,14 @@
     const btnFill = document.getElementById('teletalk-v4-fill');
     const btnForce = document.getElementById('teletalk-v4-force');
     const btnClear = document.getElementById('teletalk-v4-clear');
+    const modeSelect = document.getElementById('teletalk-v4-mode');
     const status = document.getElementById('teletalk-v4-status');
 
     async function runFill(forceRefresh) {
       btnFill.disabled = true;
       btnForce.disabled = true;
       btnClear.disabled = true;
+      const deepseekMode = modeSelect.value;
 
       try {
         status.textContent = 'Scraping form...';
@@ -357,7 +376,7 @@
         // Connect to backend and get mapping
         let payload;
         try {
-          payload = await connectBackend(formStructure, status);
+          payload = await connectBackend(formStructure, status, deepseekMode);
         } catch (error) {
           throw error;
         }
@@ -373,6 +392,7 @@
         console.log('[Teletalk Smart Fill]', {
           source: forceRefresh ? 'force-backend' : 'backend',
           key,
+          mode: deepseekMode,
           meta: payload?.meta,
           applied,
           missed,
